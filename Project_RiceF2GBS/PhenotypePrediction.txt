@@ -1,0 +1,85 @@
+# 10/01/2018
+# R script for phenotype prediction with 10X cross validation in rice F2 population:
+library(lme4)
+library(foreach)
+library(doMC)
+library(rrBLUP)
+library(qtl)
+library(abind)
+library(eqtl)
+library(sommer)
+registerDoMC(cores=10)
+options(digits=15)#设置小数点位数
+
+#save(list = ls(all.names = TRUE), file = "PhenotypePrediction.RData", envir = .GlobalEnv)
+source("QTL_mappingFx_RiceF2.R")
+cross<-read.cross("csvr",,"listBin100kb.map.Rqtl.csv",crosstype = "f2")
+gdata = extractGenotype(cross)
+pheno<-read.csv("RicePhenotypeData4R3756Normalized.csv",head=T,row.names=1,na.string="-")
+n.pheno = countStrainsPerTrait(cross$pheno) 
+pheno$id=rownames(pheno)
+pheno$idd=rownames(pheno)
+pheno$ide=rownames(pheno)
+rownames(gdata)=rownames(pheno)
+pheno.TN<-data.frame(pheno$TillerNumber[!is.na(pheno$TillerNumber)])
+rownames(pheno.TN)=rownames(pheno[!is.na(pheno$TillerNumber),])
+colnames(pheno.TN)="TillerNumber"
+gdata.TN<-gdata[rownames(pheno.TN),]
+pheno.TN$id=rownames(pheno.TN)
+pheno.TN$idd=rownames(pheno.TN)
+pheno.TN$ide=rownames(pheno.TN)
+A <- A.mat(gdata.TN)
+D <- D.mat(gdata.TN)
+E <- E.mat(gdata.TN)
+#ans.ADE.TN=mmer(TillerNumber~1,random=~vs(id,Gu=A)+vs(idd,Gu=D)+vs(ide,Gu=E),rcov=~units, verbose=FALSE,data=pheno.TN)
+#summary(ans.ADE.TN)$varcomp
+#h2.A<-pin(ans.ADE.TN,h2~V1/(V1+V2+V3+V4))
+#h2.D<-pin(ans.ADE.TN,h2~V2/(V1+V2+V3+V4))
+#h2.E<-pin(ans.ADE.TN,h2~V3/(V1+V2+V3+V4))
+
+dim(pheno.TN)
+grps=c(rep('A',364),rep('B',364),rep('C',364),rep('D',364),rep('E',364),rep('F',364),rep('G',364),rep('H',364),rep('I',364),rep('J',369))
+sgrps = sample(grps)
+pheno.TN[,5]=sgrps
+#cv=matrix(nrow=100,ncol=6)
+cv=matrix(nrow=10,ncol=6)
+#for(i in 1:10){
+	sgrps = sample(grps)
+#	k=(i-1)*10
+	k=0
+	for(j in unique(grps)){
+#		print(i)
+		print(j)
+		missing=rownames(pheno.TN[pheno.TN$V5==j,])
+		y=pheno.TN[,1:4]
+		y[missing,"TillerNumber"]<-NA
+		ansA=mmer(TillerNumber~1,random=~vs(id,Gu=A),rcov=~units,na.method.Y="include",verbose=TRUE,data=y)
+		print ("model: A")
+		ansAD=mmer(TillerNumber~1,random=~vs(id,Gu=A)+vs(idd,Gu=D),rcov=~units,na.method.Y="include",verbose=TRUE,data=y)
+		print ("model: AD")
+		ansAE=mmer(TillerNumber~1,random=~vs(id,Gu=A)+vs(ide,Gu=E),rcov=~units,na.method.Y="include",verbose=TRUE,data=y)
+		print ("model: AE")
+		ansADE=mmer(TillerNumber~1,random=~vs(id,Gu=A)+vs(idd,Gu=D)+vs(ide,Gu=E),rcov=~units,na.method.Y="include",verbose=TRUE,data=y)		
+		print ("model: ADE")
+		pA=model.matrix(~id-1,y)%*%ansA$U$'u:id'$TillerNumber + ansA$Beta[1,"Estimate"]
+		pAD=model.matrix(~id-1,y)%*%ansAD$U$'u:id'$TillerNumber + model.matrix(~idd-1,y)%*%ansAD$U$'u:idd'$TillerNumber + ansAD$Beta[1,"Estimate"]
+		pAE=model.matrix(~id-1,y)%*%ansAE$U$'u:id'$TillerNumber + model.matrix(~ide-1,y)%*%ansAE$U$'u:ide'$TillerNumber + ansAE$Beta[1,"Estimate"]
+		pADE=model.matrix(~id-1,y)%*%ansADE$U$'u:id'$TillerNumber + model.matrix(~idd-1,y)%*%ansADE$U$'u:idd'$TillerNumber + model.matrix(~ide-1,y)%*%ansADE$U$'u:ide'$TillerNumber + ansADE$Beta[1,"Estimate"]
+		corrA=cor(pA[missing,],pheno.TN[missing,1])		
+		corrAD=cor(pAD[missing,],pheno.TN[missing,1])		
+		corrAE=cor(pAE[missing,],pheno.TN[missing,1])		
+		corrADE=cor(pADE[missing,],pheno.TN[missing,1])
+		k=k+1
+#		cv[k,1]=i
+		cv[k,2]=j
+		cv[k,3]=corrA
+		cv[k,4]=corrAD
+		cv[k,5]=corrAE
+		cv[k,6]=corrADE
+	}		
+#}
+
+
+
+
+
